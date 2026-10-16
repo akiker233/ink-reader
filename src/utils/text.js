@@ -128,12 +128,15 @@ export function parseChapters(text) {
   if (!text) return [{ title: '正文', start: 0, head: 0, end: 0 }]
 
   const hits = CHAPTER_PATTERNS.map(() => [])
+  // 行首带 `#` 的命中单独计数，用于下面的模板选取
+  const markedHits = CHAPTER_PATTERNS.map(() => 0)
   const lines = text.split('\n')
   let offset = 0
 
   for (let i = 0; i < lines.length; i += 1) {
     const rawLine = lines[i]
     if (rawLine.length <= 40) {
+      const isMarked = /^#{1,6}[ \t]/.test(rawLine.trimStart())
       // 标题符和行内标记都要先擦掉再拿去匹配，否则 `## 第一章`、`==第一章==` 都认不出来
       const title = plainTitle(headingText(rawLine))
       if (title) {
@@ -150,6 +153,7 @@ export function parseChapters(text) {
               at: offset + (rawLine.length - rawLine.trimStart().length),
               head: offset + rawLine.length + 1
             })
+            if (isMarked) markedHits[p] += 1
             break
           }
         }
@@ -158,9 +162,23 @@ export function parseChapters(text) {
     offset += rawLine.length + 1
   }
 
+  /*
+   * 挑模板：命中多的胜出。
+   *
+   * 但正文里的 `1.` `2.` 列表项同样命中编号模板，而它们不是章名 —— 导入 Markdown 时最明显：
+   * 六七个 `## 一、` 标题会被几十条编号列表在数量上压过去，切出一堆「章」。所以行首带 `#`
+   * 的命中单独数一份：只要有模板拿到 ≥2 个这种命中，就只在这几条里选。纯 txt 没有 `#`，
+   * 这一步等于不生效。
+   */
+  const trustMarked = markedHits.some((n) => n >= 2)
   let best = null
-  for (const list of hits) {
-    if (list.length >= 2 && (!best || list.length > best.length)) best = list
+  let bestCount = 0
+  for (let p = 0; p < hits.length; p += 1) {
+    const count = trustMarked ? markedHits[p] : hits[p].length
+    if (count >= 2 && count > bestCount) {
+      best = hits[p]
+      bestCount = count
+    }
   }
 
   if (!best) {

@@ -360,6 +360,38 @@ console.log('\n== 目录来源（chapterSource） ==')
   )
 }
 
+console.log('\n== 分章模板的选取（带 # 的命中优先） ==')
+{
+  /*
+   * 导入 Markdown 后切成「正文规则」分章时，正文里的 `1.` `2.` 列表项会命中编号模板，
+   * 数量上常压过真正的 `## 一、` 标题。这类文件（比如一份考核题）应该仍按标题分章。
+   */
+  const md = ['## 一、考核对象与周期', '正文', '', '## 二、项目选择', '正文', '', '1. 源码仓库', '2. README', '3. 部署链接'].join('\n')
+  const chs = parseBookChapters(md, 'markdown', 'plain')
+  ok(
+    '正文里的编号列表不抢走分章（按带 # 的那套模板）',
+    chs.map((c) => c.title).join(',') === '一、考核对象与周期,二、项目选择',
+    JSON.stringify(chs.map((c) => c.title))
+  )
+  ok('换模板后正文仍覆盖全文', chs[chs.length - 1].end === md.length, String(chs[chs.length - 1].end))
+
+  // 列表行再多也压不过带 # 的标题
+  const many = ['## 一、甲', '', '## 二、乙', '', '1. a', '2. b', '3. c', '4. d', '5. e', '6. f'].join('\n')
+  ok(
+    '列表再多也压不过带 # 的章名',
+    parseBookChapters(many, 'text').map((c) => c.title).join(',') === '一、甲,二、乙',
+    JSON.stringify(parseBookChapters(many, 'text').map((c) => c.title))
+  )
+
+  // 没有 # 时（纯 txt 的写法）行为不变：编号模板照旧按数量胜出
+  const txt = ['1. 列表一', '正文', '', '2. 列表二', '正文', '', '一、甲', '正文', '', '二、乙', '正文'].join('\n')
+  ok(
+    '纯 txt 无 # 时行为不变（编号模板仍胜出）',
+    parseBookChapters(txt, 'text').map((c) => c.title).join(',') === '1. 列表一,2. 列表二',
+    JSON.stringify(parseBookChapters(txt, 'text').map((c) => c.title))
+  )
+}
+
 console.log('\n== stripMarkdown ==')
 {
   ok('去掉标题符', stripMarkdown('# 标题') === '标题')

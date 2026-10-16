@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useShelfStore } from '../stores/shelf'
 import { useUiStore } from '../stores/ui'
 import { useModalGuard } from '../composables/useModalGuard'
@@ -18,17 +18,33 @@ const content = ref('')
 const busy = ref(false)
 const textarea = ref(null)
 
+/**
+ * Esc 关闭。
+ * 挂在 window 的捕获阶段，先把输入框里的 Esc 吃掉：这类对话框本身就要拦键盘，
+ * 漏到底下会触发别处的快捷键。
+ */
+function onKey(e) {
+  if (e.key !== 'Escape') return
+  e.stopPropagation()
+  emit('close')
+}
+
 watch(
   () => props.open,
   async (open) => {
     if (open) {
       title.value = ''
       content.value = ''
+      window.addEventListener('keydown', onKey, true)
       await nextTick()
       textarea.value?.focus()
+    } else {
+      window.removeEventListener('keydown', onKey, true)
     }
   }
 )
+
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey, true))
 
 async function submit() {
   const text = content.value

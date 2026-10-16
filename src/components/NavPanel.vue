@@ -106,7 +106,7 @@ function clearSearch() {
       </div>
 
       <p class="hint faint">
-        共 {{ reader.chapters.length }} 章 · 识别规则为「{{ reader.chapters.length > 1 ? '自动匹配到的章节写法' : '无章节标记，按 1.2 万字切分' }}」
+        共 {{ reader.chapters.length }} 章 · 识别规则为「{{ reader.chapterRuleLabel }}」
       </p>
 
       <ul class="list">

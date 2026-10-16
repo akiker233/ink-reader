@@ -6,7 +6,7 @@
  * XSS 漏了就是真事故，所以每个伪协议和事件属性都单独有一条断言盯着。
  */
 const SRC = new URL('../src/utils/markdown.js', import.meta.url).href
-const { renderMarkdown, parseMarkdownChapters, stripMarkdown, safeUrl } = await import(SRC)
+const { renderMarkdown, parseMarkdownChapters, parseBookChapters, stripMarkdown, safeUrl } = await import(SRC)
 
 let pass = 0
 let fail = 0
@@ -158,6 +158,20 @@ console.log('\n== 行内 ==')
   const h = renderMarkdown('This is plain text with keyword', { query: 'keyword' })
   has(h, '<mark>keyword</mark>', '纯文本节点检索高亮')
 }
+{
+  const h = renderMarkdown('这句 ==很重要== 请记住')
+  has(h, '<mark class="hl">很重要</mark>', '==高亮== 渲染为带类名的 mark')
+  has(h, '这句 <mark class="hl">很重要</mark> 请记住</p>', '高亮前后的正文都没被吃掉')
+}
+{
+  ok('单独一个 = 不触发高亮', !renderMarkdown('a = b').includes('mark'))
+  ok('四个等号不触发高亮', !renderMarkdown('=====').includes('mark'))
+  ok('未闭合的 == 原样输出', renderMarkdown('未闭合 ==内容').includes('==内容'))
+  const h = renderMarkdown('==**粗**体==', { query: '粗' })
+  has(h, '<mark class="hl"><strong><mark>粗</mark></strong>体</mark>', '高亮里可以嵌粗体，检索命中仍生效')
+  const esc = renderMarkdown('==<script>alert(1)</script>==')
+  not(esc, '<script>', '高亮内容照样转义')
+}
 
 console.log('\n== 脚注 ==')
 {
@@ -268,6 +282,82 @@ console.log('\n== 章节识别 ==')
   const md = '## 甲 ##\n内容\n\n## 乙 ##\n内容'
   const chs = parseMarkdownChapters(md)
   ok('闭合井号从章节名里去掉', chs[0].title === '甲', chs[0].title)
+}
+
+console.log('\n== 目录来源（chapterSource） ==')
+{
+  const md = '# 书名\n\n简介在这里\n\n第一章 出发\n内容一\n\n第二章 到达\n内容二'
+
+  const byHeading = parseBookChapters(md, 'markdown')
+  ok('md 默认按 # 标题切分', byHeading.length === 1 && byHeading[0].title === '书名', JSON.stringify(byHeading.map((c) => c.title)))
+
+  const byPlain = parseBookChapters(md, 'markdown', 'plain')
+  ok(
+    'md + plain 改按正文里的章名切分（首章之前的书名简介成为「序」）',
+    byPlain.map((c) => c.title).join(',') === '序,第一章 出发,第二章 到达',
+    JSON.stringify(byPlain.map((c) => c.title))
+  )
+  ok('换口径后正文仍覆盖全文', byPlain[byPlain.length - 1].end === md.length, String(byPlain[byPlain.length - 1].end))
+  ok('章名行不进正文', !md.slice(byPlain[1].head, byPlain[1].end).includes('第一章 出发'), md.slice(byPlain[1].head, byPlain[1].end))
+  ok('章节内容还在', md.slice(byPlain[1].head, byPlain[1].end).includes('内容一'))
+
+  const asText = parseBookChapters(md, 'text', 'heading')
+  ok(
+    '纯文本书忽略 chapterSource',
+    asText.map((c) => c.title).join(',') === '序,第一章 出发,第二章 到达',
+    JSON.stringify(asText.map((c) => c.title))
+  )
+
+  const noMark = '# 书名\n\n只有简介没有章名'
+  const chunks = parseBookChapters(noMark, 'markdown', 'plain')
+  ok('正文也没章名时按字数切节兜底', chunks.length === 1 && chunks[0].title === '第 1 节', JSON.stringify(chunks.map((c) => c.title)))
+
+  /*
+   * 按正文规则切分的 Markdown：正文里的章名本身带 ATX 标题符（## 第一章 出发）。
+   * 规则是行锚定的，看不见行首的 #，所以拿去匹配前要先摘掉；但下标不能跟着变，
+   * 否则整章会错位、正文里会多出半行标记。
+   */
+  const atx = '## 第一章 出发\n\n内容一\n\n## 第二章 到达\n\n内容二'
+  const atxPlain = parseBookChapters(atx, 'markdown', 'plain')
+  ok(
+    'plain 口径认得出行首 # 的章名',
+    atxPlain.map((c) => c.title).join(',') === '第一章 出发,第二章 到达',
+    JSON.stringify(atxPlain.map((c) => c.title))
+  )
+  ok('章节起点算在行首的 # 上，不会凭空多出一个只剩标记的「序」', atxPlain[0].start === 0, String(atxPlain[0].start))
+  ok('章名行不进正文', !atx.slice(atxPlain[0].head, atxPlain[0].end).includes('第一章 出发'), JSON.stringify(atx.slice(atxPlain[0].head, atxPlain[0].end)))
+  ok('章节内容完整', atx.slice(atxPlain[0].head, atxPlain[0].end).includes('内容一'))
+  ok('末章仍覆盖到全文末尾', atxPlain[atxPlain.length - 1].end === atx.length, String(atxPlain[atxPlain.length - 1].end))
+
+  const atxText = parseBookChapters(atx, 'text')
+  ok(
+    '纯文本口径同样认得出（导入 md 后手动切成纯文本渲染）',
+    atxText.map((c) => c.title).join(',') === '第一章 出发,第二章 到达',
+    JSON.stringify(atxText.map((c) => c.title))
+  )
+
+  // # 之后必须有空白才算 ATX 标题（CommonMark 如此），#5. 这种不该被当成章名
+  const hashNoSpace = '#5. 他说\n\n内容\n\n#6. 她说\n\n内容'
+  ok('# 后无空格时不按章名处理', !parseBookChapters(hashNoSpace, 'text').some((c) => c.title.includes('他说')), JSON.stringify(parseBookChapters(hashNoSpace, 'text').map((c) => c.title)))
+
+  /*
+   * 章节标题在目录/工具条/页面抬头都是当纯文本插值的，不解析行内标记。
+   * 源文件里写 `## 四、==验收==` 时不清一遍，目录上就会挂着 `==` —— 正文里那对
+   * `==` 已经被渲染成高亮，两边对不上就显得像 bug。
+   */
+  const marked = '## 四、==验收==\n\n内容\n\n## 五、**评分**标准\n\n内容'
+  const markedCh = parseBookChapters(marked, 'markdown')
+  ok(
+    '标题里的行内标记被擦掉',
+    markedCh.map((c) => c.title).join(',') === '四、验收,五、评分标准',
+    JSON.stringify(markedCh.map((c) => c.title))
+  )
+  ok('擦标记不影响下标', markedCh[0].start === 0 && marked.slice(markedCh[0].head, markedCh[0].end).includes('内容'), String(markedCh[0].start))
+  ok(
+    '纯文本口径的标题同样擦干净',
+    parseBookChapters('==第一章== 出发\n\n内容\n\n第二章 到达\n\n内容', 'text').map((c) => c.title).join(',') === '第一章 出发,第二章 到达',
+    JSON.stringify(parseBookChapters('==第一章== 出发\n\n内容\n\n第二章 到达\n\n内容', 'text').map((c) => c.title))
+  )
 }
 
 console.log('\n== stripMarkdown ==')

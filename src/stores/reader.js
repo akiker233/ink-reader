@@ -1,11 +1,15 @@
 import { defineStore } from 'pinia'
 import { findChapterIndex, searchText, toParagraphs } from '../utils/text'
 import { renderMarkdown, parseBookChapters, countBookChars, stripMarkdown } from '../utils/markdown'
+import { readJSON, writeJSON, removeKey } from '../utils/storage'
 import { useShelfStore } from './shelf'
 import { useUiStore } from './ui'
 
 const SAVE_DEBOUNCE = 400
 const FLUSH_INTERVAL = 15
+
+/** 当前正打开着哪本书。只记 id，正文还在 IndexedDB 里 */
+const SESSION_KEY = 'session'
 
 /**
  * 阅读会话。
@@ -51,6 +55,22 @@ export const useReaderStore = defineStore('reader', {
     /** 当前这本书该按纯文本还是 Markdown 渲染 */
     format() {
       return useShelfStore().bookFormat(this.bookId)
+    },
+    /** Markdown 书的目录从哪来：'heading' 取 # 标题行，'plain' 按正文里的章节写法 */
+    chapterSource() {
+      return useShelfStore().bookChapterSource(this.bookId)
+    },
+    /** 目录面板上那句「识别规则为「…」」，跟着实际口径走 */
+    chapterRuleLabel(state) {
+      if (this.format !== 'markdown') {
+        return state.chapters.length > 1 ? '自动匹配到的章节写法' : '无章节标记，按 1.2 万字切分'
+      }
+      if (this.chapterSource === 'plain') {
+        return state.chapters.length > 1
+          ? '正文里的章节写法（第X章 / Chapter N 等）'
+          : '正文里没识别到章节写法，按 1.2 万字切节'
+      }
+      return state.chapters.length > 1 ? 'Markdown 的 # 标题行' : '整本算一章'
     },
     chapter(state) {
       return state.chapters[state.chapterIndex] || null
@@ -105,20 +125,45 @@ export const useReaderStore = defineStore('reader', {
   },
 
   actions: {
-    async openBook(id) {
+    /**
+     * 启动时恢复上次没读完就刷新 / 关掉的那本书。
+     * 返回是否真的回到了阅读页；调用方（main.js）等它结束再挂载，免得先闪一下书架。
+     */
+    async resumeLastSession() {
+      const id = readJSON(SESSION_KEY, null)?.bookId
+      if (!id) return false
+      if (!useShelfStore().book(id)) {
+        removeKey(SESSION_KEY)
+        return false
+      }
+      await this.openBook(id, { auto: true })
+      return this.view === 'reader'
+    },
+
+    /**
+     * 打开一本书。
+     *
+     * auto = true 表示这是启动时的自动恢复，不是用户点进来的：
+     * 正文万一读不出来（比如浏览器禁了 IndexedDB），只放弃这次恢复，
+     * 不能像用户主动点开那样顺手把书从书架上删掉。
+     */
+    async openBook(id, { auto = false } = {}) {
       const shelf = useShelfStore()
       const meta = shelf.book(id)
       if (!meta) return
 
       this.loading = true
       try {
-        const text = await shelf.loadText(id)
-        if (text == null) return
+        const text = await shelf.loadText(id, { drop: !auto })
+        if (text == null) {
+          if (auto) removeKey(SESSION_KEY)
+          return
+        }
 
         this.bookId = id
         this.title = meta.title
         this.text = text
-        this.chapters = parseBookChapters(text, meta.format || 'text')
+        this.chapters = parseBookChapters(text, meta.format || 'text', shelf.bookChapterSource(id))
 
         const p = meta.progress || {}
         this.chapterIndex = Math.min(Math.max(0, p.chapterIndex || 0), this.chapters.length - 1)
@@ -135,6 +180,8 @@ export const useReaderStore = defineStore('reader', {
         this.scrollToken += 1
 
         shelf.setCurrent(id)
+        // 记下「正在读这本」，刷新或重开页面时据此回到阅读页
+        writeJSON(SESSION_KEY, { bookId: id })
         this.view = 'reader'
         this.startTimer()
       } finally {
@@ -145,6 +192,8 @@ export const useReaderStore = defineStore('reader', {
     closeBook() {
       this.flushSession()
       this.stopTimer()
+      // 主动回了书架就不该被下次刷新拽回阅读页
+      removeKey(SESSION_KEY)
       this.view = 'shelf'
       this.activePanel = null
       this.text = ''
@@ -199,13 +248,35 @@ export const useReaderStore = defineStore('reader', {
       if (shelf.bookFormat(this.bookId) === next) return
 
       const offset = this.offset
-      this.chapters = parseBookChapters(this.text, next)
+      // 目录来源是独立设置：由纯文本切回 Markdown 时，之前选过的口径继续生效
+      this.chapters = parseBookChapters(this.text, next, this.chapterSource)
       shelf.setFormat(this.bookId, next, {
         wordCount: countBookChars(this.text, next),
         chapterCount: this.chapters.length
       })
       this.goOffset(offset)
       useUiStore().toast(next === 'markdown' ? '已按 Markdown 渲染' : '已按纯文本渲染', 'success')
+    },
+
+    /**
+     * 换 Markdown 书的目录来源：还读同一份原文，只重算章节边界。
+     * 和 setBookFormat 一样按全文字符下标重新定位 —— 换口径等于换一套章序号，
+     * 沿用章内比例会跳到别的地方去。
+     */
+    setChapterSource(source) {
+      const shelf = useShelfStore()
+      if (!this.bookId || !this.text) return
+      const next = source === 'plain' ? 'plain' : 'heading'
+      if (shelf.bookChapterSource(this.bookId) === next) return
+
+      const offset = this.offset
+      this.chapters = parseBookChapters(this.text, this.format, next)
+      shelf.setChapterSource(this.bookId, next, { chapterCount: this.chapters.length })
+      this.goOffset(offset)
+      useUiStore().toast(
+        next === 'plain' ? '目录已改为按正文里的章节写法切分' : '目录已改回按 # 标题切分',
+        'success'
+      )
     },
 
     saveProgress() {

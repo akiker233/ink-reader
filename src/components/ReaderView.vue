@@ -220,6 +220,15 @@ function onKey(e) {
   // 翻章与滚动会让抽屉后面的正文乱动，浮层打开时让路
   if (ui.modalCount > 0) return
 
+  /*
+   * 抽屉和对话框在捕获阶段就 stopPropagation 了，事件根本走不到这里，
+   * 所以能落到这一行的 Esc 一定是「退出阅读」，与工具栏的「书架」按钮同一个动作。
+   */
+  if (e.key === 'Escape') {
+    reader.closeBook()
+    return
+  }
+
   const page = (scrollEl.value?.clientHeight || 600) * 0.86
   switch (e.key) {
     case 'ArrowRight':
@@ -428,6 +437,15 @@ onBeforeUnmount(() => {
   padding: 1px 2px;
   border-radius: 3px;
   background: color-mix(in srgb, #e8b84b 52%, transparent);
+  color: inherit;
+}
+
+/*
+ * 正文里写死的 ==高亮==。底色用主题色而不是检索命中那抹黄，两者要能分得开；
+ * 文字颜色沿用正文色（不跟着换成 accent），否则在浅色主题上变成浅底浅字、对比度不够。
+ */
+.page__body :deep(mark.hl) {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
   color: inherit;
 }
 

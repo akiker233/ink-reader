@@ -69,6 +69,23 @@ async function reset() {
       />
     </section>
 
+    <!-- 分章口径也是每本书各自的，跟「渲染方式」互不影响：正文照旧按 Markdown 渲染，只是目录换一套切法 -->
+    <section v-if="reader.bookId && reader.format === 'markdown'" class="sec sec--switch">
+      <div>
+        <label class="sec__label"><AppIcon name="list" :size="15" /> 目录按 # 标题切分</label>
+        <p class="note faint">
+          关掉后不再拿 Markdown 标题当章节，改按正文里的「第X章 / Chapter N」这类写法分章，# 和 ## 开头的行就只是正文里的层级标题。正文里也没有章节写法时，按 1.2 万字切节。
+        </p>
+      </div>
+      <button
+        class="switch"
+        :class="{ 'is-on': reader.chapterSource === 'heading' }"
+        role="switch"
+        :aria-checked="reader.chapterSource === 'heading'"
+        @click="reader.setChapterSource(reader.chapterSource === 'heading' ? 'plain' : 'heading')"
+      />
+    </section>
+
     <div class="divider" />
 
     <!-- 字号 -->

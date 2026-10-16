@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useModalGuard } from '../composables/useModalGuard'
+import { useUiStore } from '../stores/ui'
 import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
@@ -11,15 +12,21 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close'])
+const ui = useUiStore()
 const panel = ref(null)
 
 useModalGuard(computed(() => props.open))
 
 function onKey(e) {
-  if (e.key === 'Escape') {
-    e.stopPropagation()
-    emit('close')
-  }
+  if (e.key !== 'Escape') return
+  /*
+   * 确认框是抽屉上面的一层，Esc 归它管。
+   * 两边的监听都挂在 window 的捕获阶段，stopPropagation 拦不住同层同阶段的另一个（那要
+   * stopImmediatePropagation），所以只能各自判断该不该响应，别指望传播能挡住谁。
+   */
+  if (ui.dialog) return
+  e.stopPropagation()
+  emit('close')
 }
 
 watch(

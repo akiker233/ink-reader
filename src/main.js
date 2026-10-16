@@ -35,4 +35,18 @@ window.addEventListener('pagehide', () => {
   flushers.forEach((flush) => flush())
 })
 
-app.mount('#app')
+/**
+ * 挂载前先看看上次是不是正读着一本书 —— 阅读中刷新不该被弹回书架。
+ * 正文在 IndexedDB 里，得等它读完再渲染，否则会先闪一下书架再切进阅读页；
+ * 恢复失败（或本来就没书）也照常挂载，不能把页面卡成空白。
+ */
+async function boot() {
+  try {
+    await reader.resumeLastSession()
+  } catch (err) {
+    console.warn('[boot] 恢复上次的阅读会话失败：', err.message)
+  }
+  app.mount('#app')
+}
+
+boot()

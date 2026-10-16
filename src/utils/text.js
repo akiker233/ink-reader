@@ -91,10 +91,39 @@ export function countChars(text) {
 
 /**
  * 章节识别。返回 [{ title, start, head, end }]，都是正文字符下标：
- *   start —— 章节标题所在位置，用于进度换算（保持位置连续、不丢字符）
+ *   start —— 章节起点所在位置，用于进度换算（保持位置连续、不丢字符）
  *   head  —— 正文起点，即标题行之后；渲染时从这里取内容，标题由页面单独显示，避免重复
  * 任何情况下都会返回至少一段，保证后续「按章渲染」的逻辑不用写特例。
  */
+
+/**
+ * 摘掉行首的 ATX 标题符（`## 第一章 出发 ##` → `第一章 出发`）。
+ *
+ * 上面那套章节规则是行锚定的，认不出行首的 `#`；而 Markdown 文件切成「按正文规则分章」
+ * 时，正文里带的恰恰是这种行。
+ */
+function headingText(line) {
+  return line
+    .trim()
+    .replace(/^#{1,6}[ \t]+/, '')
+    .replace(/[ \t]+#+$/, '')
+    .trim()
+}
+
+/**
+ * 章节标题的纯文本化：擦掉行内标记。
+ *
+ * 标题在目录、工具条、页面抬头三处都是当纯文本插值的，不解析行内标记；
+ * 源文件里写着 `## 四、==验收==` 或 `## 第一章 **重点**` 时，
+ * 不清一遍就会把 `==`、`**` 原样挂到目录上。
+ */
+export function plainTitle(text) {
+  return String(text == null ? '' : text)
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/[*_~=]/g, '')
+    .trim()
+}
+
 export function parseChapters(text) {
   if (!text) return [{ title: '正文', start: 0, head: 0, end: 0 }]
 
@@ -105,14 +134,20 @@ export function parseChapters(text) {
   for (let i = 0; i < lines.length; i += 1) {
     const rawLine = lines[i]
     if (rawLine.length <= 40) {
-      const title = rawLine.trim()
+      // 标题符和行内标记都要先擦掉再拿去匹配，否则 `## 第一章`、`==第一章==` 都认不出来
+      const title = plainTitle(headingText(rawLine))
       if (title) {
         for (let p = 0; p < CHAPTER_PATTERNS.length; p += 1) {
           if (hits[p].length >= MAX_CHAPTERS) break
           if (CHAPTER_PATTERNS[p].test(title)) {
             hits[p].push({
               title,
-              at: offset + rawLine.indexOf(title),
+              /*
+               * 章节起点认行首那个非空白字符，而不是标题文字的位置：擦掉标记后的标题已经
+               * 不是原行里的连续片段，indexOf 会落空；何况行首带 `## ` 时，起点若挪到标题
+               * 文字上，「第一章之前算序」会把那截 `## ` 当成正文，凭空多出一个空「序」。
+               */
+              at: offset + (rawLine.length - rawLine.trimStart().length),
               head: offset + rawLine.length + 1
             })
             break

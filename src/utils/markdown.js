@@ -1,4 +1,4 @@
-import { escapeHtml, escapeRegExp, MAX_SEGMENT, parseChapters, countChars } from './text.js'
+import { escapeHtml, escapeRegExp, MAX_SEGMENT, parseChapters, countChars, plainTitle } from './text.js'
 
 /**
  * 精简 Markdown 解析器（零依赖）。
@@ -15,7 +15,7 @@ import { escapeHtml, escapeRegExp, MAX_SEGMENT, parseChapters, countChars } from
  * 支持的语法见 README，这里刻意不追求 100% CommonMark 兼容。
  */
 
-const SPECIAL_INLINE = '`![<*_~h'
+const SPECIAL_INLINE = '`![<*_~=h'
 
 /* ------------------------------------------------------------------ 入口 */
 
@@ -510,6 +510,16 @@ function inline(text, ctx) {
       continue
     }
 
+    /*
+     * ==高亮==。类名和检索命中的 mark 分开：命中是「临时找到的」，跟正文里写死的高亮
+     * 不是一回事，配色上要能各自辨认。`=` 必须成对，所以 a == b 这种普通等号不受影响。
+     */
+    if (text[i] === '=' && (m = /^==([^=\n]+?)==/.exec(rest))) {
+      out += `<mark class="hl">${inline(m[1], ctx)}</mark>`
+      i += m[0].length
+      continue
+    }
+
     if (text[i] === '*' && isEmphasisOpen(text, i) && (m = /^\*([^*\n]+?)\*/.exec(rest))) {
       out += `<em>${inline(m[1], ctx)}</em>`
       i += m[0].length
@@ -761,7 +771,7 @@ export function parseMarkdownChapters(text) {
 
     const atx = matchAtxHeading(line)
     if (atx) {
-      hits.push({ level: atx.level, title: atx.text, at: offsets[i], head: offsets[i] + line.length + 1 })
+      hits.push({ level: atx.level, title: plainTitle(atx.text), at: offsets[i], head: offsets[i] + line.length + 1 })
       i += 1
       continue
     }
@@ -771,7 +781,7 @@ export function parseMarkdownChapters(text) {
       const underline = lines[i + 1]
       hits.push({
         level: setext.level,
-        title: setext.text,
+        title: plainTitle(setext.text),
         at: offsets[i],
         head: offsets[i] + line.length + 1 + underline.length + 1
       })
@@ -904,9 +914,17 @@ export function formatOfFilename(name) {
   return /\.(md|markdown|mdx|mdown|mkd|mkdn)$/i.test(String(name || '')) ? 'markdown' : 'text'
 }
 
-/** 章节解析的唯一入口：调用方不用自己判断格式 */
-export function parseBookChapters(text, format) {
-  return format === 'markdown' ? parseMarkdownChapters(text) : parseChapters(text)
+/**
+ * 章节解析的唯一入口：调用方不用自己判断格式。
+ *
+ * chapterSource 只对 Markdown 有意义：'heading'（默认）取 # 标题行，
+ * 'plain' 忽略标题、改按正文里的「第X章 / Chapter N」这类写法切分。
+ * 需要这个开关，是因为有些 .md 只有书名和零散小节写成标题，
+ * 真正的分章仍是正文里的章名 —— 正文存的是原文，换口径不用重新导入。
+ */
+export function parseBookChapters(text, format, chapterSource = 'heading') {
+  if (format !== 'markdown') return parseChapters(text)
+  return chapterSource === 'plain' ? parseChapters(text) : parseMarkdownChapters(text)
 }
 
 /** 字数统计：Markdown 的 # * ` 这些标记不该算进「字数」里 */
@@ -929,6 +947,6 @@ export function stripMarkdown(source) {
     .replace(/^\s*[-+*]\s+\[[ xX]\]\s+/gm, '')
     .replace(/^\s*([-+*]|\d{1,9}[.)])\s+/gm, '')
     .replace(/^\s*\|?[\s:|-]+\|[\s:|-]*$/gm, '')
-    .replace(/[*_~]/g, '')
+    .replace(/[*_~=]/g, '')
     .replace(/[|]/g, ' ')
 }

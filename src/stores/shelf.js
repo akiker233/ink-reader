@@ -7,19 +7,21 @@ import { useUiStore } from './ui'
 
 /**
  * 书籍元数据只放"小"字段；正文单独存 IndexedDB（见 utils/idb.js）。
- * format 决定正文怎么渲染、章节从哪来，是 'text' | 'markdown'。
+ * format 决定正文怎么渲染，chapterSource 决定 Markdown 书的目录从哪来，
+ * 取值分别是 'text' | 'markdown' 和 'heading' | 'plain'。
  */
-function createBook({ title, encoding, size, text, format = 'text' }) {
+function createBook({ title, encoding, size, text, format = 'text', chapterSource = 'heading' }) {
   const now = Date.now()
   return {
     id: `${now.toString(36)}${Math.random().toString(36).slice(2, 8)}`,
     title: (title || '未命名').trim() || '未命名',
     format,
+    chapterSource,
     encoding,
     size,
     charCount: text.length,
     wordCount: countBookChars(text, format),
-    chapterCount: parseBookChapters(text, format).length,
+    chapterCount: parseBookChapters(text, format, chapterSource).length,
     createdAt: now,
     lastReadAt: null,
     readSeconds: 0,
@@ -72,12 +74,25 @@ export const useShelfStore = defineStore('shelf', {
       return this.book(id)?.format || 'text'
     },
 
+    /** Markdown 书的目录来源；老数据没有该字段，一律按 # 标题行 */
+    bookChapterSource(id) {
+      return this.book(id)?.chapterSource === 'plain' ? 'plain' : 'heading'
+    },
+
     /** 切换渲染方式。字数与章节数由调用方（reader 持有正文）算好后带进来 */
     setFormat(id, format, patch = {}) {
       const target = this.book(id)
       if (!target) return
       target.format = format === 'markdown' ? 'markdown' : 'text'
       if (patch.wordCount) target.wordCount = patch.wordCount
+      if (patch.chapterCount) target.chapterCount = patch.chapterCount
+    },
+
+    /** 切换目录来源。正文没变，所以字数不用重算，只有章节数要跟着改 */
+    setChapterSource(id, source, patch = {}) {
+      const target = this.book(id)
+      if (!target) return
+      target.chapterSource = source === 'plain' ? 'plain' : 'heading'
       if (patch.chapterCount) target.chapterCount = patch.chapterCount
     },
 
@@ -129,10 +144,15 @@ export const useShelfStore = defineStore('shelf', {
       return book
     },
 
-    /** 从 IndexedDB 取正文，找不到就顺手把这条脏元数据清掉 */
-    async loadText(id) {
+    /**
+     * 从 IndexedDB 取正文，找不到就顺手把这条脏元数据清掉。
+     * drop = false 时只返回 null，不动书架 —— 启动时的自动恢复走这条路，
+     * 存储不可用不该导致一本书被悄悄删掉。
+     */
+    async loadText(id, { drop = true } = {}) {
       const text = await getText(id)
       if (text == null) {
+        if (!drop) return null
         const ui = useUiStore()
         const target = this.book(id)
         ui.toast(`「${target?.title || id}」的正文已丢失，请重新导入`, 'error')

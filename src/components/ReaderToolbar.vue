@@ -69,9 +69,24 @@ function onDocPointerDown(e) {
   if (!moreWrap.value?.contains(e.target)) menuOpen.value = false
 }
 
+/**
+ * 菜单开着时 Esc 只关菜单。
+ * 必须在捕获阶段拦住（并 stopPropagation），否则阅读器的 Esc 会连书一起退掉。
+ */
+function onKey(e) {
+  if (e.key !== 'Escape') return
+  e.stopPropagation()
+  menuOpen.value = false
+}
+
 watch(menuOpen, (open) => {
-  if (open) document.addEventListener('pointerdown', onDocPointerDown, true)
-  else document.removeEventListener('pointerdown', onDocPointerDown, true)
+  if (open) {
+    document.addEventListener('pointerdown', onDocPointerDown, true)
+    window.addEventListener('keydown', onKey, true)
+  } else {
+    document.removeEventListener('pointerdown', onDocPointerDown, true)
+    window.removeEventListener('keydown', onKey, true)
+  }
 })
 
 // 工具条收起来时菜单必须一起关掉：它挂在工具条内部，跟着一起被推上去
@@ -82,7 +97,10 @@ watch(
   }
 )
 
-onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointerDown, true))
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocPointerDown, true)
+  window.removeEventListener('keydown', onKey, true)
+})
 </script>
 
 <template>

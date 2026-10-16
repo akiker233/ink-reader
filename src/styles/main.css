@@ -1,0 +1,514 @@
+/* ---------- 变量与重置 ---------- */
+:root {
+  --bg: #f5f0e6;
+  --panel: #fffcf5;
+  --fg: #33302a;
+  --accent: #2f6f63;
+  --surface-filter: none;
+
+  --muted: color-mix(in srgb, var(--fg) 58%, var(--bg));
+  --faint: color-mix(in srgb, var(--fg) 34%, var(--bg));
+  --line: color-mix(in srgb, var(--fg) 14%, var(--bg));
+  --line-strong: color-mix(in srgb, var(--fg) 26%, var(--bg));
+  --hover: color-mix(in srgb, var(--fg) 7%, var(--bg));
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  --accent-contrast: #ffffff;
+
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 6%), 0 2px 8px rgb(0 0 0 / 4%);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 8%), 0 12px 32px rgb(0 0 0 / 8%);
+  --shadow-lg: 0 8px 24px rgb(0 0 0 / 12%), 0 24px 64px rgb(0 0 0 / 14%);
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --font-ui: "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* 代码字体不跟随正文字体设置，固定一套等宽，避免选出「仿宋」后代码块里字宽对不齐 */
+  --font-mono: "JetBrains Mono", "Cascadia Mono", "Consolas", ui-monospace, monospace;
+
+  /*
+   * 安全区。index.html 里开了 viewport-fit=cover，全屏时内容会铺到刘海底下、
+   * 主页横条上头，所以四个方向都要把 inset 让出来。
+   * 统一走变量而不是到处写 env()：只有这里需要处理「不支持时的兜底 0px」。
+   */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+/*
+ * iOS 的地址栏收起、软键盘弹出都会改变「可视高度」，而 100% 是按布局视口算的，
+ * 结果就是底部一截被顶出屏幕、正文最后几行看不见。dvh 跟随可视视口，能跟上这个变化；
+ * 不认 dvh 的浏览器仍用上面的 100%（此处 @supports 之外的规则未被覆盖）。
+ */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #app {
+    height: 100dvh;
+  }
+}
+
+body {
+  font-family: var(--font-ui);
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  /* 移动端在滚动容器顶部继续下拉会触发浏览器整页刷新，读到一半被刷新掉很难受 */
+  overscroll-behavior: none;
+  /* 移动端点击默认会闪一块灰/蓝方块，比 :active 的反馈更刺眼，关掉后统一走 :active */
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.3s var(--ease), color 0.3s var(--ease);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+/* ---------- 滚动条 ---------- */
+.scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+  /* 滚到顶/底时不要把滚动链传给外层：移动端会因此触发下拉刷新或整页回弹 */
+  overscroll-behavior: contain;
+}
+
+.scroll-area::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+/* ---------- 通用控件 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 15px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 10px;
+  background: var(--hover);
+  color: var(--fg);
+  white-space: nowrap;
+  transition: background 0.18s var(--ease), transform 0.12s var(--ease), opacity 0.18s;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.btn--ghost {
+  background: transparent;
+}
+
+.btn--danger {
+  background: color-mix(in srgb, #d0503f 14%, var(--bg));
+  color: color-mix(in srgb, #d0503f 82%, var(--fg));
+}
+
+.btn--sm {
+  height: 32px;
+  padding: 0 11px;
+  font-size: 13px;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  color: var(--muted);
+  transition: background 0.18s var(--ease), color 0.18s var(--ease), transform 0.12s var(--ease);
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.icon-btn.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--hover);
+  border: 1px solid transparent;
+  transition: border-color 0.18s var(--ease), background 0.18s var(--ease);
+}
+
+.field:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 46%, transparent);
+  background: var(--panel);
+}
+
+.field input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  font-size: 14px;
+}
+
+.field input::placeholder {
+  color: var(--faint);
+}
+
+select.field {
+  cursor: pointer;
+  appearance: none;
+  padding-right: 30px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 17px, calc(100% - 12px) 17px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  font-size: 14px;
+}
+
+textarea.field {
+  height: auto;
+  align-items: stretch;
+  padding: 11px 12px;
+  line-height: 1.7;
+  resize: vertical;
+}
+
+/* 滑块 */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: none;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--panel);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.12s var(--ease);
+}
+
+.slider::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line-strong);
+}
+
+.slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--panel);
+}
+
+/* 开关 */
+.switch {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 25px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  transition: background 0.22s var(--ease);
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.22s var(--ease);
+}
+
+.switch.is-on {
+  background: var(--accent);
+}
+
+.switch.is-on::after {
+  transform: translateX(19px);
+}
+
+/* 小标签 */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  border-radius: 9px;
+  background: var(--hover);
+  color: var(--muted);
+  transition: background 0.16s var(--ease), color 0.16s var(--ease);
+}
+
+.chip.is-active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+/*
+ * 所有 :hover 都只在「真有指针」的设备上生效。
+ * 触摸设备上 :hover 会粘住 —— 点完按钮背景一直保持深色，
+ * 点完卡片封面上的删除按钮则整块变红，看起来像出了问题。
+ */
+@media (hover: hover) {
+  .btn:hover {
+    background: color-mix(in srgb, var(--fg) 13%, var(--bg));
+  }
+
+  .btn--primary:hover {
+    background: color-mix(in srgb, var(--accent) 88%, #000);
+  }
+
+  .btn--ghost:hover {
+    background: var(--hover);
+  }
+
+  .btn--danger:hover {
+    background: color-mix(in srgb, #d0503f 24%, var(--bg));
+  }
+
+  .icon-btn:hover {
+    background: var(--hover);
+    color: var(--fg);
+  }
+
+  .chip:hover {
+    color: var(--fg);
+  }
+
+  .slider::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+  }
+
+  .scroll-area::-webkit-scrollbar-thumb:hover {
+    background: var(--muted);
+    background-clip: content-box;
+  }
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 6px;
+  background: var(--hover);
+  color: var(--muted);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.faint {
+  color: var(--faint);
+}
+
+/* ---------- 过渡 ---------- */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.22s var(--ease);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: transform 0.28s var(--ease), opacity 0.28s var(--ease);
+}
+
+.slide-enter-from,
+.slide-leave-to {
+  transform: translateX(24px);
+  opacity: 0;
+}
+
+.pop-enter-active {
+  transition: transform 0.24s var(--ease), opacity 0.24s var(--ease);
+}
+
+.pop-leave-active {
+  transition: transform 0.16s var(--ease), opacity 0.16s var(--ease);
+}
+
+.pop-enter-from,
+.pop-leave-to {
+  transform: scale(0.94) translateY(8px);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+ * ---------- 触摸设备 ----------
+ * 上面那些 32 / 36 / 38px 的控件尺寸是按鼠标精度定的：
+ * 鼠标能停在 4px 宽的按钮上，手指按不准。这里统一抬到接近 44px 的可点面积。
+ * 只改尺寸不改字号，视觉密度基本不变。
+ */
+@media (pointer: coarse) {
+  .btn {
+    height: 44px;
+    padding: 0 17px;
+  }
+
+  .btn--sm {
+    height: 38px;
+  }
+
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 11px;
+  }
+
+  .chip {
+    height: 38px;
+  }
+
+  .field {
+    height: 46px;
+  }
+
+  /*
+   * 开关本体只有 25px 高，直接放大就会打乱设置面板每一行的节奏，
+   * 所以视觉尺寸不动，用一层透明伪元素把热区撑到 44px。
+   */
+  .switch::before {
+    content: "";
+    position: absolute;
+    inset: -10px -8px;
+  }
+
+  .slider {
+    height: 30px;
+  }
+
+  .slider::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+    margin-top: -9px;
+  }
+
+  .slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+  }
+
+  /*
+   * iOS Safari 聚焦 font-size 小于 16px 的输入框时，会把整个页面放大且不自动缩回，
+   * 表现为「点一下搜索框，界面就错位了」。把触摸设备上的表单字号提到 16px 绕开它。
+   */
+  .field input,
+  select.field,
+  input,
+  textarea {
+    font-size: 16px;
+  }
+}

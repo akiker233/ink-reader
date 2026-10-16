@@ -1,0 +1,21 @@
+{
+  "name": "ink-reader",
+  "version": "1.0.0",
+  "private": true,
+  "description": "墨读 — 一个纯前端的 TXT 文本阅读器",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "test:md": "node scripts/md-selftest.mjs"
+  },
+  "dependencies": {
+    "pinia": "^2.2.6",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.7"
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-ssr/
+.DS_Store
+*.local
+*.log
+.vite/
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# 考核题原文：只留本地，不进仓库
+比特工场2026秋招程序组考核题.md

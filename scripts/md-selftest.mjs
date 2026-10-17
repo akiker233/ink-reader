@@ -402,6 +402,60 @@ console.log('\n== stripMarkdown ==')
   ok('去掉代码块', bare.includes('前') && bare.includes('后') && !bare.includes('code') && !bare.includes('```'), JSON.stringify(bare))
 }
 
+console.log('\n== 超长章节切分 ==')
+{
+  /*
+   * 一个大代码块占满全书时，旧版 findSplit 从 target 往回试探、
+   * 却把 probe 设成刚找到的换行本身，于是永远取到同一个位置 —— 导入直接卡死。
+   */
+  const lines = ['# 长文档', '', '## 代码', '', '```js']
+  for (let i = 0; i < 900; i += 1) lines.push(`const value_${i} = compute(${i}, "s${i}")`)
+  lines.push('```')
+  const md = lines.join('\n')
+  const t0 = Date.now()
+  const chs = parseBookChapters(md, 'markdown')
+  const dt = Date.now() - t0
+  ok('超长代码块能正常切分（不卡死）', dt < 1000, dt + 'ms / ' + chs.length + ' 章 / ' + (md.length / 1024).toFixed(1) + 'KB')
+  ok('超长章节被切成多段', chs.length > 1, String(chs.length))
+  ok('每段不超过 12000 字符', chs.every((c) => c.end - c.start <= 12000), JSON.stringify(chs.map((c) => c.end - c.start)))
+  ok(
+    '切分后仍覆盖全文',
+    chs[0].start === 0 && chs[chs.length - 1].end === md.length,
+    chs[0].start + '..' + chs[chs.length - 1].end
+  )
+  ok('围栏里的切点也落在换行处', chs.slice(1).every((c) => md[c.start - 1] === '\n'))
+
+  // 切在代码块中间时，续章必须带上围栏信息，否则剩下的代码会被当成正文
+  ok('续章记录开启围栏', chs.slice(1).every((c) => c.fenceOpen === '```js'), JSON.stringify(chs.slice(1).map((c) => c.fenceOpen)))
+  ok('未闭合的段记录闭合围栏', chs.slice(1, -1).every((c) => c.fenceClose === '```'), JSON.stringify(chs.slice(1, -1).map((c) => c.fenceClose)))
+  {
+    const c = chs[1]
+    const rendered = renderMarkdown(`${c.fenceOpen}\n${md.slice(c.head, c.end)}\n${c.fenceClose}`)
+    ok('续章补回围栏后渲染成代码块', rendered.startsWith('<pre class="code">'), rendered.slice(0, 40))
+  }
+
+  // 纯正文的超长章节：优先切在空行，别把段落劈开
+  const para = '这一段是正文，用来把章节撑过一万二千字符。'.repeat(20)
+  const prose = '# 书\n\n' + Array.from({ length: 80 }, () => para).join('\n\n')
+  const pchs = parseBookChapters(prose, 'markdown')
+  ok('纯正文超长章节切成多段', pchs.length > 1, String(pchs.length))
+  ok(
+    '续章切在段落空行之后',
+    pchs.slice(1).every((c) => prose[c.start - 1] === '\n' && prose[c.start - 2] === '\n'),
+    JSON.stringify(pchs.map((c) => c.start))
+  )
+
+  // 纯文本格式走的是另一套 chunk()，同样不能把段落劈开
+  const txt = `第一章 开始\n\n${Array.from({ length: 80 }, () => para).join('\n\n')}\n\n第二章 结束\n\n短内容`
+  const tchs = parseBookChapters(txt, 'text')
+  ok('纯 txt 超长章节同样按段切分', tchs.length >= 3, String(tchs.length))
+  ok(
+    'txt 续章切在段落空行之后',
+    tchs.slice(1, -1).every((c) => txt[c.start - 1] === '\n' && txt[c.start - 2] === '\n'),
+    JSON.stringify(tchs.map((c) => c.start))
+  )
+}
+
 console.log('\n== 性能兜底 ==')
 {
   const big = ('# 标题\n\n段落内容 **加粗** [链接](https://a.com)\n\n- 列表项\n\n').repeat(4000)

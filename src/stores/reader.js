@@ -81,7 +81,10 @@ export const useReaderStore = defineStore('reader', {
     chapterHtml(state) {
       if (!this.chapter) return ''
       // 从 head 取正文：start 处的标题行由页面单独渲染，避免屏幕上出现两遍标题
-      const raw = state.text.slice(this.chapter.head, this.chapter.end)
+      let raw = state.text.slice(this.chapter.head, this.chapter.end)
+      // 超长章节可能在围栏代码块中间被切开，续章要把围栏补回来，否则代码会被当成正文
+      if (this.chapter.fenceOpen) raw = `${this.chapter.fenceOpen}\n${raw}`
+      if (this.chapter.fenceClose) raw = `${raw}\n${this.chapter.fenceClose}`
       return this.format === 'markdown'
         ? renderMarkdown(raw, { query: state.query })
         : toParagraphs(raw, state.query)

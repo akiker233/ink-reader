@@ -846,12 +846,16 @@ function splitOversizedMd(segments, text) {
     }
     const parts = chunkMd(text, seg.head, seg.end)
     parts.forEach((part, i) => {
-      result.push({
+      const piece = {
         title: i === 0 ? seg.title : `${seg.title}（续 ${i + 1}/${parts.length}）`,
         start: i === 0 ? seg.start : part.start,
         head: part.start,
         end: part.end
-      })
+      }
+      // 围栏代码块被切开时，续章要把围栏补回来，否则代码会被当成正文渲染
+      if (part.fenceOpen) piece.fenceOpen = part.fenceOpen
+      if (part.fenceClose) piece.fenceClose = part.fenceClose
+      result.push(piece)
     })
   }
   return result.length ? result : [{ title: '正文', start: 0, head: 0, end: text.length }]
@@ -860,51 +864,72 @@ function splitOversizedMd(segments, text) {
 function chunkMd(text, start, end) {
   const out = []
   let cursor = start
+  // 分章标题只会在围栏之外命中，所以每个切分起点的围栏状态都是「无」
+  let fence = null
   while (cursor < end) {
-    const stop = findSplit(text, cursor, Math.min(cursor + MAX_SEGMENT, end), end)
-    out.push({ start: cursor, end: stop })
+    const target = Math.min(cursor + MAX_SEGMENT, end)
+    const [stop, nextFence] = findSplit(text, cursor, target, end, fence)
+    out.push({
+      start: cursor,
+      end: stop,
+      fenceOpen: fence ? fence.marker.repeat(fence.len) + fence.info : '',
+      fenceClose: nextFence ? nextFence.marker.repeat(nextFence.len) : ''
+    })
+    fence = nextFence
     cursor = stop
   }
   return out.length ? out : [{ start, end }]
 }
 
-/** 从目标位置往回找最近的「围栏之外的空行」，找不到就退回目标位置 */
-function findSplit(text, from, target, end) {
-  if (target >= end) return end
-  const head = text.slice(0, target)
-  const fenceState = openFenceAt(head)
-  let probe = target
-  while (probe > from + MAX_SEGMENT * 0.5) {
-    const nl = text.lastIndexOf('\n', probe)
-    if (nl <= from) break
-    const quote = text.slice(0, nl)
-    if (isBlankAt(text, nl) && !openFenceAt(quote)) return nl + 1
-    if (!fenceState && nl <= target) {
-      const prev = text.lastIndexOf('\n', nl - 1)
-      if (prev > from && isBlankAt(text, prev)) return nl
-    }
-    probe = nl
-  }
-  return target
-}
+/**
+ * 从 from 往后找切分点，返回 [切点, 切点处的围栏状态]。
+ *
+ * 只做一次前向扫描：早先的实现从 target 往回试探，用 lastIndexOf('\n', probe) 取上一个
+ * 换行后又把 probe 设成该换行本身，下一次仍取到同一个位置 —— 只要切分点落在没有空行的
+ * 围栏代码块里（例如一个大代码块占满全书），就会原地打转、把标签页卡死。
+ *
+ * 优先切在围栏之外的空行后，其次切在任意换行处（围栏内也切，但不会劈开一行），
+ * 都没有才退回 target。
+ */
+function findSplit(text, from, target, end, fence) {
+  if (target >= end) return [end, null]
+  const min = from + MAX_SEGMENT * 0.5
+  let blank = -1
+  let lineBreak = -1
+  let lineBreakState = fence
+  let state = fence
+  let stateAtTarget = fence
+  let pos = from
 
-function isBlankAt(text, nl) {
-  const before = text.lastIndexOf('\n', nl - 1)
-  return text.slice(before + 1, nl).trim() === ''
-}
+  while (pos < target) {
+    const nl = text.indexOf('\n', pos)
+    const lineEnd = nl < 0 ? text.length : nl
+    const line = text.slice(pos, lineEnd)
 
-/** 该片段结束时是否还停在未闭合的围栏里 */
-function openFenceAt(text) {
-  let fence = null
-  for (const line of text.split('\n')) {
-    const open = matchFence(line)
-    if (fence) {
-      if (isFenceClose(line, fence)) fence = null
-    } else if (open) {
-      fence = open
+    if (state) {
+      if (isFenceClose(line, state)) state = null
+    } else {
+      const open = matchFence(line)
+      if (open) state = open
     }
+
+    const next = lineEnd + 1
+    if (next <= target) {
+      stateAtTarget = state
+      if (next > min) {
+        // 空行是更自然的段落边界；围栏里也至少切在换行处，别把一行代码劈成两半
+        if (!state && !line.trim()) blank = next
+        lineBreak = next
+        lineBreakState = state
+      }
+    }
+    if (nl < 0) break
+    pos = next
   }
-  return Boolean(fence)
+
+  if (blank > 0) return [blank, null]
+  if (lineBreak > 0) return [lineBreak, lineBreakState]
+  return [target, stateAtTarget]
 }
 
 /* ------------------------------------------------------------ 统计辅助 */

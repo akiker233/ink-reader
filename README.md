@@ -36,7 +36,7 @@
 
 ### Markdown 语法支持
 
-自研解析器，支持以下语法（`npm run test:md` 有 128 条断言覆盖）：
+自研解析器，支持以下语法（`npm run test:md` 有 140 条断言覆盖）：
 
 | 类别 | 语法 |
 | --- | --- |
@@ -153,7 +153,7 @@ src/
 └── styles/main.css         # CSS 变量（含安全区）、重置、按钮/滑块/开关等基础件、触摸设备尺寸
 
 scripts/
-└── md-selftest.mjs         # Markdown 解析器自测（128 条断言，npm run test:md）
+└── md-selftest.mjs         # Markdown 解析器自测（140 条断言，npm run test:md）
 ```
 
 ---
